@@ -72,7 +72,7 @@ Before you begin, ensure you have met the following requirements:
 
 1. Start the FastAPI backend:
    ```
-   uvicorn main:app --reload
+   uvicorn app:app --reload
    ```
 
 2. Launch the Streamlit UI:

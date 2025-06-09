@@ -4,6 +4,7 @@ from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
+from pathlib import Path
 
 def extract_text_from_pdf(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
@@ -33,8 +34,10 @@ def process_pdf(pdf_path, chunk_size=1800, chunk_overlap=200):
 
 def process_multiple_pdfs(pdf_paths):
     all_documents = []
+    pdf_paths = list(Path(pdf_paths).rglob("*.pdf"))  # Recursively find all PDFs
+
     for pdf_path in pdf_paths:
-        documents = process_pdf(pdf_path)
+        documents = process_pdf(str(pdf_path))
         all_documents.extend(documents)
     return all_documents
 
@@ -60,11 +63,8 @@ def process_and_store(pdf_paths, vector_db_path):
     print(f"All chunks from {len(pdf_paths)} PDFs processed and stored in the vector database")
 
 def main():
-    pdf_paths = [
-        "NCERT-Class-12-Physics-Part-1.pdf",
-        # "NCERT-Class-12-Physics-Part-2.pdf"
-    ]
-    vector_db_path = "vector_db3"
+    pdf_paths = "RAG-Enhanced-NCERT-Tutor/Textbooks"
+    vector_db_path = "vector_db4"
     
     process_and_store(pdf_paths, vector_db_path)
 

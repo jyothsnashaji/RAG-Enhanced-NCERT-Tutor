@@ -1,0 +1,3 @@
+[submodule "ncert_tutor"]
+	path = ncert_tutor
+	url = https://github.com/thangarajn01/ncert_tutor.git

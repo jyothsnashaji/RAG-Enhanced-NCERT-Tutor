@@ -8,7 +8,7 @@ router_prompt = ChatPromptTemplate.from_messages([
             You are a smart router that classifies student questions as either:
             - "explain" → if the question or keyword is asking about school subjects like physics, math, chemistry, definitions, experiments, calculations etc.
             - "translate" → if the question is about translating text or explaination requested in a different language
-            - "exercise" -> if the task is to generate practice questions
+            - "exercise" -> if the task is to generate practice problems, quizzes, or exercises on a specific topic
             - "general" → if none of these
 
             Mark follow up questions in the same destination
@@ -60,6 +60,35 @@ general_prompt = ChatPromptTemplate.from_messages([
     ("system", """You are a friendly school tutor, ready to help with any academic question.
                 You have the capability to help the student with their studies by explaining concepts or providing exercise questions.
                 Assist in achieving their academic goals."""),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{input}")
+])
+
+quiz_prompt = ChatPromptTemplate.from_messages([
+    ("system", """
+      Context:
+        {context}
+                                                
+        Instructions:
+        You are a knowledgeable tutor for grade {grade} in {subject}.
+        Generate {num_questions} multiple choice questions (MCQs) for grade {grade} and subject {subject} from chapter {topic}
+        using only the provided context to answer the question below.
+                                                
+        If the context does not contain the answer,
+            or if it is a technical topic but not within the context, do not generate any quiz and 
+            respond it is beyond the scope of the syllabus.
+
+        If context is enough to generate quiz, then generate the quiz in the following format:
+        Each question should have 4 options (A to D) and indicate the correct answer as 'Answer: <option>' after each question.
+        Do not include any additional text or explanations, just the questions and options.
+        Use the following format for each question:      
+        Q1. What is ...?
+        A. ...
+        B. ...
+        C. ...
+        D. ...
+        Answer: A
+  """),
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])

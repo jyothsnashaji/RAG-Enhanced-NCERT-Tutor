@@ -1,18 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
-from collections import defaultdict
 
 from langchain_groq import ChatGroq
 from destination_chains import Response
-from langchain.memory import ConversationBufferMemory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import InMemoryChatMessageHistory
-from langchain.prompts import PromptTemplate
-from langchain.schema.runnable import RunnableSequence
-from langchain.chains.router import MultiRouteChain
-from langchain_core.runnables import RunnableLambda
-#from destination_chains import run_explaination_chain, get_translation_chain, get_exercise_chain, get_general_chain
+
 import pdb 
 from prompts import router_prompt
 import json

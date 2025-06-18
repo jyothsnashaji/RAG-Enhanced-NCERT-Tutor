@@ -1,21 +1,17 @@
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
-from typing import List
+from typing import List, Optional
 
-from fastapi.responses import JSONResponse
-from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain_core.runnables import RunnableSequence 
-from prompts import explain_prompt, general_prompt
+from prompts import explain_prompt, general_prompt, quiz_prompt
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import InMemoryChatMessageHistory
-import pdb
-from langchain_community.embeddings import OllamaEmbeddings
+import pdb,re
 from langchain_groq import ChatGroq
 from pydantic import BaseModel
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableSequence 
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -31,6 +27,21 @@ def get_session_history(session_id):
     if session_id not in session_histories:
         session_histories[session_id] = InMemoryChatMessageHistory()
     return session_histories[session_id]
+
+class Quiz(BaseModel):
+    question: str
+    options: List[str]
+    answer: str
+
+class DocumentInfo(BaseModel):
+    page: str
+    file: str
+    snippet: str
+
+class Response(BaseModel):
+    answer: Optional[str]
+    retrieved_documents: Optional[List[DocumentInfo]]
+    quiz: Optional[List[Quiz]] = None
 
 class ExplainDestinationChain():
     def __init__(self, session_id):
@@ -110,8 +121,77 @@ class TranslationDestinationChain():
 class ExerciseDestinationChain():
     def __init__(self, session_id):
         self.session_id = session_id
-        # Define exercise chain here if needed
+        self.llm =  ChatOpenAI(model="gpt-4o-mini")
+        self.embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        self.vectorstore = FAISS.load_local("/Users/jshaji/Library/CloudStorage/OneDrive-Cisco/IISc/Deep Learning/RAG-Enhanced-NCERT-Tutor/ncert_tutor/vector_store", self.embeddings, allow_dangerous_deserialization=True)
+        self.retriever = self.vectorstore.as_retriever()
+        self._chain = quiz_prompt | self.llm
+
+    def get_rag_response(self, query: str, num_questions: int = 5, grade: str = "", subject: str = ""):
+        retriever = self.vectorstore.as_retriever(
+        # search_kwargs={
+        #     "k": 1,
+        #     "filter": {
+        #         "grade": grade,
+        #         "subject": subject.lower(),
+        #         "chapter": topic,
+        #     }
+        # }
+    )
+        try:
+            prompt = quiz_prompt.partial(
+                num_questions=num_questions,
+                grade=grade,
+                subject=subject,
+                topic=query
+            )
+
+            # Build RAG chain
+            combine_docs_chain = create_stuff_documents_chain(self.llm, prompt)
+            rag_chain: RunnableSequence = create_retrieval_chain(retriever, combine_docs_chain)
+
+            # Run the RAG chain with just `query` as input
+            input = f"Generate {num_questions} MCQs for grade {grade} and subject {subject} for topic {query}."
+
+            result = rag_chain.invoke({"input": input, "chat_history": get_session_history(self.session_id).messages},
+                                      config={"configurable": {"session_id": self.session_id}})
+            print("=== RAG Chain Result ===")
+            print(result)
+
+            return result['answer'] if isinstance(result, dict) and "answer" in result else result
+        except Exception as e:
+            print(f"[ERROR] Quiz generation failed: {e}")
+            return "Error generating quiz."
     
+    def parse_quiz_text(self,text: str) -> List[Quiz]:
+        # Split the text into individual questions
+        questions = re.split(r'\n(?=Q\d+\.)', text.strip())
+        quizzes = []
+
+        for q in questions:
+            # Match question number, question, options and answer
+            match = re.match(
+                r"Q\d+\.\s*(.*?)\s*"
+                r"A\.\s*(.*?)\s*"
+                r"B\.\s*(.*?)\s*"
+                r"C\.\s*(.*?)\s*"
+                r"D\.\s*(.*?)\s*"
+                r"Answer:\s*([A-D])", q, re.DOTALL
+            )
+            if match:
+                question_text = match.group(1).strip()
+                options = [match.group(i).strip() for i in range(2, 6)]
+                answer_index = "ABCD".index(match.group(6))
+                quizzes.append(Quiz(
+                    question=question_text,
+                    options=options,
+                    answer=options[answer_index]
+                ))
+            else:
+                print(f"Failed to parse: {q}")
+
+        return quizzes
+            
 class GeneralDestinationChain():
     def __init__(self, session_id):
         self.session_id = session_id
@@ -126,21 +206,6 @@ class DestinationChainArgs():
         self.keyword = keyword
         self.target_language = target_language
         self.query = query
-
-class Quiz(BaseModel):
-    question: str
-    options: List[str]
-    answer: str
-
-class DocumentInfo(BaseModel):
-    page: str
-    file: str
-    snippet: str
-
-class Response(BaseModel):
-    answer: str
-    retrieved_documents: List[DocumentInfo]
-    quiz: Quiz = None  # Optional field for quiz data
 
 
 
@@ -211,18 +276,17 @@ def run_exercise_chain(arguments, session_id):
         - keyword: The keyword to search for in the context
         - target_language: The language to translate to (if applicable)
         - question: The question or query to be answered
-    Outputs: Response object containing:
+    Outputs: List of Response object containing:
         - answer: The generated answer from the exercise chain
         - retrieved_documents: List of DocumentInfo objects containing source information
         - quiz: Quiz object containing generated questions and answers
         
     """
+    chain = get_exercise_chain(session_id)
+    rag_response = chain.get_rag_response(query=arguments.keyword)
+    quizzes =  chain.parse_quiz_text(rag_response) 
     return Response(
-        answer="Exercise functionality is not yet implemented.",
+        answer="",
         retrieved_documents=[],
-        quiz=Quiz(
-            question="This is a placeholder question",
-            options=["Option 1", "Option 2", "Option 3", "Option 4"],
-            answer="Option 1"
-        )
-    )  # Placeholder response until exercise chain is implemented
+        quiz=quizzes
+    )  # Assuming no sources for quiz generation
